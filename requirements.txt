@@ -1,0 +1,14 @@
+# Core data / model
+yfinance
+pandas
+numpy
+requests
+
+# Phase 0 infrastructure
+celery>=5.3
+redis
+SQLAlchemy>=2.0
+python-dotenv
+
+# Optional: Postgres/TimescaleDB driver (uncomment for production DB)
+# psycopg2-binary

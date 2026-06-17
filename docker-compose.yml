@@ -1,0 +1,31 @@
+# Phase 0 infrastructure: Redis now; Postgres/TimescaleDB ready to enable.
+#   docker compose up -d redis
+# Then run the Celery worker + beat on the host (see celery_app.py).
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: stockpredict-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  # Uncomment to move durable storage off SQLite onto TimescaleDB.
+  # db:
+  #   image: timescale/timescaledb:latest-pg16
+  #   container_name: stockpredict-db
+  #   environment:
+  #     POSTGRES_USER: stock
+  #     POSTGRES_PASSWORD: stock
+  #     POSTGRES_DB: stockpredict
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - db-data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+volumes:
+  redis-data:
+  # db-data:

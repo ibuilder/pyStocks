@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>stockpredict — day-trading research companion</title>
+<meta name="description" content="A Python desktop companion: multi-horizon return estimates, live intraday technicals, news + sentiment, market-wide scanners, and a rule-based alert engine — fed by a Celery + Redis pipeline and validated by a point-in-time backtester."/>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1a2230; --panel2:#222d3d; --line:#2a3647;
+    --fg:#e6edf3; --muted:#8b98a9; --accent:#4fa3ff; --green:#3fb950;
+    --red:#f85149; --amber:#d29922;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#16202e 0,var(--bg) 60%);
+       color:var(--fg);font:16px/1.6 "Segoe UI",system-ui,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+  header{padding:64px 0 26px;text-align:center}
+  .logo{font-size:15px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
+  h1{font-size:46px;margin:10px 0 8px;font-weight:700;letter-spacing:-.5px}
+  h1 .em{background:linear-gradient(90deg,#4fa3ff,#7ee0a9);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{font-size:19px;color:var(--muted);max-width:720px;margin:0 auto}
+  .badges{margin:22px 0 0;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .badge{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+         padding:6px 14px;font-size:13px;color:var(--muted)}
+  .badge b{color:var(--fg)}
+  .disc{margin:26px auto 0;max-width:760px;background:#241a00;border:1px solid var(--amber);
+        color:#e3b341;border-radius:10px;padding:13px 18px;font-size:14px}
+  section{padding:42px 0;border-top:1px solid var(--line)}
+  h2{font-size:27px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 24px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
+  .card h3{margin:0 0 6px;font-size:17px}
+  .card .ic{font-size:22px}
+  .card p{margin:6px 0 0;color:var(--muted);font-size:14px}
+  /* app mock */
+  .mock{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+        overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.45);margin-top:26px}
+  .mock .bar{display:flex;align-items:center;gap:8px;padding:11px 14px;background:#131b27;border-bottom:1px solid var(--line)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .mock .title{margin-left:8px;color:var(--muted);font-size:13px}
+  .tabs{display:flex;gap:4px;padding:10px 12px 0;flex-wrap:wrap}
+  .tab{padding:7px 13px;border-radius:8px 8px 0 0;background:#131b27;color:var(--muted);font-size:13px;font-weight:600}
+  .tab.on{background:var(--panel2);color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600}
+  td:first-child,th:first-child{text-align:left}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  .barcell{display:inline-block;height:8px;border-radius:4px;background:var(--green);vertical-align:middle}
+  pre{background:#0c1118;border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;
+      font:13px/1.5 Consolas,monospace;color:#cfe1f5}
+  .pipe{font:13px/1.5 Consolas,monospace;color:var(--muted);white-space:pre;overflow:auto;
+        background:#0c1118;border:1px solid var(--line);border-radius:10px;padding:16px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .rt th,.rt td{text-align:left}
+  .ok{color:var(--green)} .wip{color:var(--amber)}
+  .stack{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 11px;font-size:13px;color:var(--muted)}
+  footer{padding:40px 0 70px;color:var(--muted);font-size:13px;text-align:center;border-top:1px solid var(--line)}
+  @media(max-width:720px){.two{grid-template-columns:1fr}h1{font-size:34px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">📈 stockpredict</div>
+  <h1>The <span class="em">day-trading research</span> companion</h1>
+  <p class="tag">Continuously-aggregated market data turned into one research surface:
+     multi-horizon return estimates, live intraday technicals, news &amp; sentiment,
+     market-wide scanners, and a rule-based alert engine.</p>
+  <div class="badges">
+    <span class="badge"><b>7</b> live tabs</span>
+    <span class="badge"><b>Celery + Redis</b> background pipeline</span>
+    <span class="badge"><b>Point-in-time</b> backtester</span>
+    <span class="badge"><b>28</b> passing tests</span>
+    <span class="badge">Python · Tkinter</span>
+  </div>
+  <div class="disc">⚠ A research &amp; decision-support tool — <b>not</b> a prediction engine,
+     <b>not</b> an auto-trader, and <b>not</b> investment advice. It never places trades; it
+     surfaces information. Every number is an estimate with wide error bars.</div>
+
+  <!-- App mock -->
+  <div class="mock" aria-hidden="true">
+    <div class="bar">
+      <span class="dot" style="background:#f85149"></span>
+      <span class="dot" style="background:#d29922"></span>
+      <span class="dot" style="background:#3fb950"></span>
+      <span class="title">stockpredict — multi-horizon return estimates</span>
+    </div>
+    <div class="tabs">
+      <div class="tab on">Next Week</div><div class="tab">Next Month</div>
+      <div class="tab">Next Year</div><div class="tab">⚡ Intraday</div>
+      <div class="tab">🔔 Alerts</div><div class="tab">📰 News</div>
+      <div class="tab">🔍 Scanners</div>
+    </div>
+    <table>
+      <tr><th>#</th><th>Ticker</th><th>Est. Return</th><th>Range (1σ)</th><th>Confidence</th><th>Why</th></tr>
+      <tr><td>1</td><td>ADBE</td><td class="pos">+3.6%</td><td>-2.8% … +10.0%</td>
+          <td><span class="barcell" style="width:70px"></span> 70%</td><td>1wk -13% (reversal) · vol 45%</td></tr>
+      <tr><td>2</td><td>NFLX</td><td class="pos">+2.6%</td><td>-1.9% … +7.2%</td>
+          <td><span class="barcell" style="width:62px"></span> 62%</td><td>1wk -4.6% (reversal) · vol 32%</td></tr>
+      <tr><td>3</td><td>CRM</td><td class="pos">+2.4%</td><td>-4.6% … +9.3%</td>
+          <td><span class="barcell" style="width:58px"></span> 58%</td><td>1wk -7.1% (reversal) · vol 49%</td></tr>
+    </table>
+  </div>
+</header>
+
+<section id="features">
+  <h2>What it does</h2>
+  <p class="sub">Seven tabs, one continuously-updating picture of the market.</p>
+  <div class="grid">
+    <div class="card"><div class="ic">📅</div><h3>Multi-horizon estimates</h3>
+      <p>Separate models for next <b>week</b> (short-term reversal + low-vol), <b>month</b>
+         (momentum + quality), and <b>year</b> (12-1 momentum + value), each ranked with a
+         volatility-scaled range and confidence.</p></div>
+    <div class="card"><div class="ic">⚡</div><h3>Live intraday technicals</h3>
+      <p>VWAP, opening-range, relative volume, RSI, ATR and the EMA stack computed every
+         minute per symbol off a Redis stream.</p></div>
+    <div class="card"><div class="ic">📰</div><h3>News + sentiment</h3>
+      <p>Per-ticker headlines scored with a transparent finance lexicon; sentiment merged
+         into the snapshot so it’s both visible and alertable. Pluggable for FinBERT/LLM.</p></div>
+    <div class="card"><div class="ic">🔍</div><h3>Market-wide scanners</h3>
+      <p>Ten built-in scans (gainers, unusual volume, ORB breakouts, oversold/overbought,
+         news movers) plus your own — filtered &amp; ranked live.</p></div>
+    <div class="card"><div class="ic">🔔</div><h3>Alert engine</h3>
+      <p>Edge-triggered rules with cooldowns over every indicator (incl. <code>crosses_above</code>),
+         delivered to a <b>desktop toast</b>. Build rules &amp; scans from the UI — no code.</p></div>
+    <div class="card"><div class="ic">🧪</div><h3>Validated, not assumed</h3>
+      <p>A point-in-time backtester gates what counts as “actionable”. Walk-forward,
+         realistic costs, and the Information Coefficient — with honest caveats.</p></div>
+  </div>
+</section>
+
+<section id="architecture">
+  <h2>Architecture</h2>
+  <p class="sub">A hybrid the way the research demands it: a streaming bus for the firehose,
+     Celery for everything scheduled, guaranteed, and retryable.</p>
+  <div class="pipe">  PROVIDERS (REST / WebSocket: prices · news · fundamentals)
+        │                                   │
+   real-time                          scheduled / on-demand
+        ▼                                   ▼
+  INGESTOR (asyncio)                  CELERY BEAT (scheduler)
+  feed → indicators                  pre-market screen · intraday (1m)
+        │  XADD                       news (10m) · alerts · weekly backtest
+        ▼                                   │ enqueue
+   ┌─────────────── REDIS ───────────────┐  ▼
+   │ Streams · pub/sub · cache · state    │ CELERY WORKERS
+   └──────────────┬───────────────────────┘ indicators · sentiment · alerts · scans
+                  ▼
+      DESKTOP WINDOW (Tkinter, 7 tabs)  +  toast notifications
+                  │
+        SQLite / Postgres-ready  (signals · alerts · backtests · custom scans)</div>
+</section>
+
+<section id="validation">
+  <h2>Honest backtest findings</h2>
+  <p class="sub">10 years, point-in-time, net of costs. The metric that matters for a ranking
+     model is the Information Coefficient (IC); an IC t-stat above ~2 is the bar for “real”.</p>
+  <div class="two">
+    <table class="rt">
+      <tr><th>Horizon</th><th>Excess vs benchmark</th><th>IC (t-stat)</th><th>Verdict</th></tr>
+      <tr><td>Week</td><td class="neg">−2.5%</td><td>−0.00 (−0.2)</td><td>No edge</td></tr>
+      <tr><td>Month</td><td class="pos">+10.1%</td><td>+0.03 (1.3)</td><td>Most promising</td></tr>
+      <tr><td>Year</td><td class="pos">+5.7%</td><td>+0.04 (0.4)</td><td>Too few samples</td></tr>
+    </table>
+    <div class="card">
+      <h3>Why this matters</h3>
+      <p>The backtest tells us <b>which signals deserve to be productionised</b>. The weekly
+         reversal signal doesn’t survive costs here; the month horizon is the one worth
+         streaming. Caveats are shown in every tearsheet: fundamentals excluded (no
+         point-in-time data → would leak the future), survivorship bias (current
+         constituents), thin year-horizon samples.</p>
+    </div>
+  </div>
+</section>
+
+<section id="roadmap">
+  <h2>Roadmap</h2>
+  <p class="sub">Built in increments, each demoable and tested.</p>
+  <table class="rt">
+    <tr><th>Phase</th><th>Status</th></tr>
+    <tr><td>0 — Foundation (Celery + Redis + DB, scheduled screen)</td><td class="ok">✅ Done</td></tr>
+    <tr><td>1 — Backtesting &amp; validation harness</td><td class="ok">✅ Done</td></tr>
+    <tr><td>2 — Real-time spine (intraday indicators)</td><td class="wip">🚧 Increment 1</td></tr>
+    <tr><td>3 — Alerts · News/Sentiment · Scanners · Delivery · No-code builders</td><td class="ok">✅ Done</td></tr>
+    <tr><td>Next — FinBERT/LLM sentiment, Alpaca/Polygon streaming, email/Telegram</td><td class="wip">⏳ Planned</td></tr>
+  </table>
+</section>
+
+<section id="run">
+  <h2>Run it</h2>
+  <p class="sub">Zero-setup desktop app; add Redis to run the background pipeline.</p>
+  <pre># desktop app (yfinance prototype data)
+pip install -r requirements.txt
+python app.py
+
+# background pipeline
+docker compose up -d redis
+celery -A stockpredict.celery_app worker --loglevel=info --pool=solo
+celery -A stockpredict.celery_app beat   --loglevel=info
+
+# validate the model -> HTML tearsheet
+python -m backtest.run --walk-forward --open
+
+# tests
+pytest -q</pre>
+  <div class="stack" style="margin-top:16px">
+    <span class="chip">Python 3.10+</span><span class="chip">Tkinter</span>
+    <span class="chip">Celery</span><span class="chip">Redis</span>
+    <span class="chip">SQLAlchemy</span><span class="chip">pandas / numpy</span>
+    <span class="chip">yfinance</span><span class="chip">matplotlib</span>
+    <span class="chip">winotify</span>
+  </div>
+</section>
+
+<footer>
+  <p><b>stockpredict</b> — research &amp; decision-support companion. Not investment advice;
+     not an auto-trader. Markets are unpredictable — do your own research.</p>
+</footer>
+
+</div>
+</body>
+</html>
