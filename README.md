@@ -27,16 +27,31 @@ pip install -r requirements.txt      # one-time
 python app.py
 ```
 
+> **Standalone .exe (no Python needed):** `pyinstaller stockpredict.spec` →
+> `dist\stockpredict.exe`. The GUI runs fully in-process, so the exe needs no
+> Redis/Celery. Full build/signing/installer notes in [PACKAGING.md](PACKAGING.md).
+
 A window opens, immediately starts pulling data, and populates seven tabs:
 **Next Week · Next Month · Next Year · ⚡ Intraday · 🔔 Alerts · 📰 News · 🔍 Scanners**.
 It auto-refreshes on a schedule (default 15 min) and has a **Refresh now** button.
 Double-click any return-estimate row for a factor-by-factor breakdown.
 
-**Desktop UX niceties:** click any column header to **sort** (numeric-aware, persists
-across live refreshes); a header **market-session indicator** (open / pre-market /
-after-hours / closed) with a **next-refresh countdown**; **friendly empty/loading
-states**; and **persisted preferences** — universe, refresh interval, auto-refresh,
-selected scan and window size are restored on next launch (`~/.stockpredict_cache/prefs.json`).
+**Desktop UX niceties:**
+- Click any column header to **sort** (numeric-aware, persists across live refreshes).
+- **Quick filter box** — type a ticker fragment to filter every tab instantly.
+- **Export CSV** — one click exports the active tab's table.
+- **Price sparkline** — double-click a return-estimate row for a factor breakdown
+  *and* a 120-session price chart (drawn from the local cache, no network).
+- **Embedded intraday chart** — select a row on the Intraday tab to see its
+  intraday price line with a **VWAP overlay** in a panel below the table.
+- **Right-click any row** → Copy ticker · Open in Yahoo Finance · New alert.
+- **Sound on alert** — optional beep when a new alert fires (toggle on the Alerts tab).
+- Header **market-session indicator** (open / pre-market / after-hours / closed)
+  with a **next-refresh countdown**.
+- **Friendly empty/loading states** everywhere.
+- **Persisted preferences** — universe, refresh interval, auto-refresh, selected
+  scan, filter, **column widths**, sound toggle and window size restored on next
+  launch (`~/.stockpredict_cache/prefs.json`).
 
 ### Project structure
 ```

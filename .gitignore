@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# PyInstaller build artifacts
+build/
+dist/
+build_release/
+dist_release/
+installer/Output/
+*.manifest
+*.log
+assets_icon_preview.png
+
+# Local data / secrets
+.env
+.stockpredict_cache/
+.cache/
+
+# OS
+Thumbs.db
+.DS_Store

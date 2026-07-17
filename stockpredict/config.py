@@ -16,8 +16,21 @@ try:  # optional: load a local .env if python-dotenv is installed
 except Exception:
     pass
 
-# Where we cache downloaded data between runs/refreshes.
-CACHE_DIR = Path(os.environ.get("STOCKPREDICT_CACHE", Path.home() / ".stockpredict_cache"))
+# Where we cache downloaded data, the SQLite DB, prefs, logs, and reports.
+# In a packaged (frozen) build the exe dir may be read-only, so always use a
+# per-user writable location: %LOCALAPPDATA%\stockpredict on Windows.
+def _default_cache_dir() -> Path:
+    env = os.environ.get("STOCKPREDICT_CACHE")
+    if env:
+        return Path(env)
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / "stockpredict"
+    return Path.home() / ".stockpredict_cache"
+
+
+CACHE_DIR = _default_cache_dir()
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Phase 0 infrastructure -------------------------------------------------

@@ -1,0 +1,77 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest matplotlib pyarrow scipy winotify pyinstaller
+      - name: Run tests
+        run: python -m pytest -q
+
+  build-exe:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install matplotlib pyarrow scipy winotify pyinstaller
+      - name: Build one-file exe
+        run: pyinstaller --clean --noconfirm stockpredict.spec
+      - name: Smoke-test the frozen build
+        run: ./dist/stockpredict.exe --selftest
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stockpredict-exe
+          path: dist/stockpredict.exe
+          if-no-files-found: error
+
+  release:
+    # Attach the exe to a GitHub Release when a v* tag is pushed.
+    needs: build-exe
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install matplotlib pyarrow scipy winotify pyinstaller
+      - name: Build one-file exe
+        run: pyinstaller --clean --noconfirm stockpredict.spec
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/stockpredict.exe
+          generate_release_notes: true
