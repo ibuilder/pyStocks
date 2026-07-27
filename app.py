@@ -7,13 +7,14 @@ guarantee of future returns. Every number is an estimate with wide error bars.
 """
 from __future__ import annotations
 
+import csv
 import queue
 import re
 import threading
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 from stockpredict.aggregator import DataAggregator
 from stockpredict.config import HORIZONS, config, DEFAULT_REFRESH_SECONDS
@@ -103,14 +104,17 @@ class App(tk.Tk):
         self.results = None
         self.meta = {}
         self.trees: dict[str, ttk.Treeview] = {}
+        self._named_trees: dict = {}        # name -> tree (for width persistence)
         self._tree_sort: dict = {}          # tree -> (col_id, descending)
         self._last_refresh_ts = 0.0
+        self._intraday_bar_cache: dict = {} # ticker -> (ts, bars) for the chart
 
         self._build_style()
         self._build_header()
         self._build_controls()
         self._build_tabs()
         self._build_statusbar()
+        self._restore_col_widths()
 
         self.agg = DataAggregator(
             on_update=lambda r, m: self._queue.put(("update", (r, m))),
@@ -226,6 +230,15 @@ class App(tk.Tk):
         ttk.Button(bar, text="↻  Refresh now", style="Accent.TButton",
                    command=self._refresh_now).pack(side="left")
 
+        ttk.Label(bar, text="Filter:", style="Muted.TLabel").pack(side="left", padx=(16, 4))
+        self.filter_var = tk.StringVar()
+        fe = ttk.Combobox(bar, textvariable=self.filter_var, width=10,
+                          values=[])  # free-text entry; combobox for consistent styling
+        fe.pack(side="left")
+        fe.bind("<KeyRelease>", lambda e: self._rerender_all())
+        fe.bind("<<ComboboxSelected>>", lambda e: self._rerender_all())
+        ttk.Button(bar, text="Export CSV", command=self._export_csv).pack(side="left", padx=(10, 0))
+
         # Market session + next-refresh indicator (right side).
         self.market_lbl = tk.Label(bar, text="", bg=BG, fg=MUTED, font=("Segoe UI Semibold", 9))
         self.market_lbl.pack(side="right")
@@ -256,6 +269,10 @@ class App(tk.Tk):
                    command=lambda: self._open_builder("alert")).pack(side="left")
         ttk.Button(actl, text="Manage Rules",
                    command=self._open_manage_rules).pack(side="left", padx=(8, 0))
+        self.alert_sound_var = tk.BooleanVar(value=bool(self.prefs.get("alert_sound", True)))
+        ttk.Checkbutton(actl, text="🔊 Sound on alert", variable=self.alert_sound_var,
+                        command=lambda: userprefs.update(alert_sound=bool(self.alert_sound_var.get()))
+                        ).pack(side="left", padx=(12, 0))
         self.alerts_tree = self._make_alerts_tree(al)
         # News tab (Phase 3 news + sentiment).
         nw = ttk.Frame(nb, style="TFrame")
@@ -265,6 +282,15 @@ class App(tk.Tk):
         sc = ttk.Frame(nb, style="TFrame")
         nb.add(sc, text="🔍 Scanners")
         self.scan_tree = self._make_scanners_tab(sc)
+
+        # Register trees by name for column-width persistence + row menus.
+        self._named_trees = {
+            "week": self.trees["week"], "month": self.trees["month"],
+            "year": self.trees["year"], "intraday": self.intraday_tree,
+            "alerts": self.alerts_tree, "news": self.news_tree, "scan": self.scan_tree,
+        }
+        for tr in self._named_trees.values():
+            self._attach_row_menu(tr)
 
     def _make_scanners_tab(self, parent):
         ctl = ttk.Frame(parent, style="TFrame")
@@ -347,8 +373,18 @@ class App(tk.Tk):
         return tree
 
     def _make_intraday_tree(self, parent):
+        # Chart panel pinned to the bottom; table fills the rest above it.
+        self.intraday_chart_frame = ttk.Frame(parent, style="TFrame", height=180)
+        self.intraday_chart_frame.pack(side="bottom", fill="x")
+        self.intraday_chart_frame.pack_propagate(False)
+        self._intraday_chart_canvas = None
+        self._intraday_chart_hint = tk.Label(
+            self.intraday_chart_frame, bg=BG, fg=MUTED, font=("Segoe UI", 9),
+            text="Select a row to see its intraday chart (price + VWAP).")
+        self._intraday_chart_hint.pack(expand=True)
+
         wrap = ttk.Frame(parent, style="TFrame")
-        wrap.pack(fill="both", expand=True, pady=4)
+        wrap.pack(side="top", fill="both", expand=True, pady=4)
         cols = [c[0] for c in INTRADAY_COLUMNS]
         tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
         for cid, label, width in INTRADAY_COLUMNS:
@@ -363,8 +399,78 @@ class App(tk.Tk):
         tree.tag_configure("neg", foreground=RED)
         tree.tag_configure("odd", background=PANEL)
         tree.tag_configure("even", background=PANEL2)
+        tree.bind("<<TreeviewSelect>>", self._on_intraday_select)
         self._attach_sort(tree, INTRADAY_COLUMNS)
         return tree
+
+    def _on_intraday_select(self, _evt=None):
+        sel = self.intraday_tree.selection()
+        if not sel or "empty" in self.intraday_tree.item(sel[0])["tags"]:
+            return
+        ticker = str(self._row_ticker(self.intraday_tree, sel[0])).strip()
+        if ticker:
+            threading.Thread(target=self._load_intraday_chart, args=(ticker,), daemon=True).start()
+
+    def _load_intraday_chart(self, ticker):
+        """Fetch intraday bars (cached briefly) and queue a chart render."""
+        try:
+            hit = self._intraday_bar_cache.get(ticker)
+            if hit and time.time() - hit[0] < 120:
+                bars = hit[1]
+            else:
+                from realtime.feed import get_intraday
+                data = get_intraday([ticker], interval="5m", days=2)
+                bars = data.get(ticker)
+                self._intraday_bar_cache[ticker] = (time.time(), bars)
+            self._queue.put(("intraday_chart", (ticker, bars)))
+        except Exception as exc:
+            self._queue.put(("status", f"Chart fetch failed: {exc}"))
+
+    def _render_intraday_chart(self, ticker, bars):
+        frame = self.intraday_chart_frame
+        for w in frame.winfo_children():
+            w.destroy()
+        self._intraday_chart_canvas = None
+        try:
+            if bars is None or bars.empty:
+                tk.Label(frame, text=f"No intraday bars for {ticker}.", bg=BG, fg=MUTED).pack(expand=True)
+                return
+            import pandas as pd
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+            df = bars.sort_index()
+            day = df.index[-1].date()
+            sess = df[[ts.date() == day for ts in df.index]]
+            if len(sess) < 3:
+                sess = df.tail(78)
+            close = sess["Close"]
+            typ = (sess["High"] + sess["Low"] + sess["Close"]) / 3.0
+            vol = sess["Volume"].fillna(0)
+            vwap = (typ * vol).cumsum() / vol.cumsum().replace(0, pd.NA)
+            up = close.iloc[-1] >= close.iloc[0]
+
+            fig = Figure(figsize=(6, 1.7), dpi=100, facecolor="#1a2230")
+            ax = fig.add_subplot(111)
+            ax.set_facecolor("#1a2230")
+            ax.plot(range(len(close)), close.values, color=(GREEN if up else RED), lw=1.5, label=ticker)
+            ax.plot(range(len(vwap)), vwap.values, color=ACCENT, lw=1.0, ls="--", label="VWAP")
+            ax.fill_between(range(len(close)), close.values, close.min(),
+                            color=(GREEN if up else RED), alpha=0.10)
+            for s in ax.spines.values():
+                s.set_visible(False)
+            ax.tick_params(colors="#8b98a9", labelsize=7)
+            ax.set_xticks([])
+            ax.legend(loc="upper left", fontsize=7, facecolor="#222d3d",
+                      edgecolor="none", labelcolor="#e6edf3")
+            ax.margins(x=0)
+            fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.08)
+            canvas = FigureCanvasTkAgg(fig, master=frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=4)
+            self._intraday_chart_canvas = canvas
+        except Exception:
+            tk.Label(frame, text="Chart unavailable.", bg=BG, fg=MUTED).pack(expand=True)
 
     # --------------------------------------------------- click-to-sort columns
     def _attach_sort(self, tree, columns):
@@ -464,6 +570,8 @@ class App(tk.Tk):
         # sort by absolute move from open (most active first)
         items = sorted(snap.items(), key=lambda kv: abs(kv[1].get("pct_from_open") or 0), reverse=True)
         for i, (ticker, d) in enumerate(items):
+            if not self._match_filter(ticker):
+                continue
             po = d.get("pct_from_open")
             pv = d.get("pct_from_vwap")
             orbreak = "▲ above" if d.get("above_or_high") else "▼ below" if d.get("below_or_low") else "—"
@@ -480,7 +588,7 @@ class App(tk.Tk):
             )
             tag = "pos" if (po or 0) >= 0 else "neg"
             tree.insert("", "end", values=vals, tags=(tag, "even" if i % 2 else "odd"))
-        self._apply_sort(tree)
+        self._finalize(tree, len(INTRADAY_COLUMNS))
 
     # --------------------------------------------------------------- alerts
     def _poll_alerts(self):
@@ -498,6 +606,8 @@ class App(tk.Tk):
             newest = fired[0] if fired else None
             if newest:
                 self._set_status(f"🔔 {newest['ticker']}: {newest['rule_name']}")
+                if self._alert_seen > 0:  # don't beep on the initial load
+                    self._play_alert_sound()
         self._alert_seen = len(fired)
         self.after(15000, self._poll_alerts)
 
@@ -509,6 +619,8 @@ class App(tk.Tk):
                               "No alerts fired yet — add rules with ＋ New Rule.")
             return
         for i, a in enumerate(fired):
+            if not self._match_filter(a.get("ticker", "")):
+                continue
             t = a.get("fired_at")
             tstr = t.strftime("%H:%M:%S") if hasattr(t, "strftime") else str(t)
             details = (a.get("message") or "")
@@ -517,7 +629,7 @@ class App(tk.Tk):
             tree.insert("", "end",
                         values=(tstr, a.get("ticker", ""), a.get("rule_name", ""), details),
                         tags=("new" if i == 0 else ("even" if i % 2 else "odd"),))
-        self._apply_sort(tree)
+        self._finalize(tree, len(ALERT_COLUMNS))
 
     # ----------------------------------------------------------------- news
     def _poll_news(self):
@@ -550,6 +662,8 @@ class App(tk.Tk):
         # newest first
         rows.sort(key=lambda r: r[1].get("published_at") or "", reverse=True)
         for i, (ticker, it) in enumerate(rows[:200]):
+            if not self._match_filter(ticker):
+                continue
             sc = it.get("score", 0) or 0
             tag = "pos" if sc > 0.05 else "neg" if sc < -0.05 else "neu"
             arrow = "▲" if sc > 0.05 else "▼" if sc < -0.05 else "•"
@@ -559,9 +673,7 @@ class App(tk.Tk):
                 it.get("title", ""), it.get("publisher") or "—",
             ), tags=(tag,))
             self._news_links[iid] = it.get("link")
-        if not rows:
-            self._empty_state(tree, len(NEWS_COLUMNS), "No headlines loaded yet…")
-        self._apply_sort(tree)
+        self._finalize(tree, len(NEWS_COLUMNS))
 
     # ------------------------------------------------------------- scanners
     def _poll_scanners(self):
@@ -581,6 +693,8 @@ class App(tk.Tk):
                               "No matches — waiting for intraday data or none qualify right now.")
             return
         for i, r in enumerate(rows):
+            if not self._match_filter(r.get("ticker", "")):
+                continue
             po = r.get("pct_from_open")
             pv = r.get("pct_from_vwap")
             ns = r.get("news_sentiment")
@@ -596,10 +710,10 @@ class App(tk.Tk):
             )
             tag = "pos" if (po or 0) >= 0 else "neg"
             tree.insert("", "end", values=vals, tags=(tag, "even" if i % 2 else "odd"))
-        self._apply_sort(tree)
+        self._finalize(tree, len(SCAN_COLUMNS))
 
     # ------------------------------------------------- rule / scan builder
-    def _open_builder(self, kind: str):
+    def _open_builder(self, kind: str, prefill_ticker: str | None = None):
         """Modal dialog to build an alert rule (kind='alert') or scan ('scan')."""
         is_alert = kind == "alert"
         win = tk.Toplevel(self)
@@ -622,7 +736,7 @@ class App(tk.Tk):
         name_var = tk.StringVar()
         tk.Entry(top, textvariable=name_var, width=44).grid(row=0, column=1, columnspan=3, sticky="w", padx=6, pady=3)
 
-        scope_var = tk.StringVar(value="*")
+        scope_var = tk.StringVar(value=(prefill_ticker if (kind == "alert" and prefill_ticker) else "*"))
         cooldown_var = tk.StringVar(value="1800")
         sort_var = tk.StringVar(value="pct_from_open")
         desc_var = tk.BooleanVar(value=True)
@@ -805,6 +919,148 @@ class App(tk.Tk):
         self._set_status("Manual refresh requested…")
         self.agg.refresh_now()
 
+    # ----------------------------------------------------- filter / export
+    def _match_filter(self, ticker) -> bool:
+        f = self.filter_var.get().strip().upper()
+        return (not f) or (f in str(ticker).upper())
+
+    def _rerender_all(self):
+        """Re-render every tab from its current source (used on filter change)."""
+        if self.results:
+            self._render(self.results)
+        try:
+            self._render_intraday(intraday_store.load_latest())
+        except Exception:
+            pass
+        try:
+            self._render_news(news_service.load_headlines())
+        except Exception:
+            pass
+        try:
+            self._run_scan()
+        except Exception:
+            pass
+        try:
+            self._render_alerts(storage.recent_fired(limit=100))
+        except Exception:
+            pass
+
+    def _finalize(self, tree, ncols):
+        """After populating: show a placeholder if empty, else apply the sort."""
+        if not tree.get_children(""):
+            msg = "No rows match the filter." if self.filter_var.get().strip() else "No data yet."
+            self._empty_state(tree, ncols, msg)
+        else:
+            self._apply_sort(tree)
+
+    def _active_tree(self):
+        order = [self.trees["week"], self.trees["month"], self.trees["year"],
+                 self.intraday_tree, self.alerts_tree, self.news_tree, self.scan_tree]
+        try:
+            idx = self.nb.index("current")
+            return order[idx] if 0 <= idx < len(order) else None
+        except Exception:
+            return None
+
+    def _export_csv(self):
+        tree = self._active_tree()
+        if not tree:
+            return
+        cols = tree["columns"]
+        headers = [tree.heading(c).get("text", c) for c in cols]
+        rows = [tree.item(i)["values"] for i in tree.get_children("")
+                if "empty" not in tree.item(i)["tags"]]
+        if not rows:
+            messagebox.showinfo("Export CSV", "Nothing to export on this tab.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV files", "*.csv")],
+            initialfile="stockpredict_export.csv", parent=self)
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as fh:
+                w = csv.writer(fh)
+                w.writerow(headers)
+                w.writerows(rows)
+            self._set_status(f"Exported {len(rows)} rows → {path}")
+        except Exception as exc:
+            messagebox.showerror("Export failed", str(exc), parent=self)
+
+    # ------------------------------------------------ right-click row menu
+    def _attach_row_menu(self, tree):
+        tree.bind("<Button-3>", lambda e, t=tree: self._on_row_right_click(e, t))
+
+    def _row_ticker(self, tree, iid):
+        cols = tree["columns"]
+        if "ticker" in cols:
+            return tree.set(iid, "ticker")
+        return tree.item(iid)["values"][1] if len(tree.item(iid)["values"]) > 1 else ""
+
+    def _on_row_right_click(self, event, tree):
+        iid = tree.identify_row(event.y)
+        if not iid or "empty" in tree.item(iid)["tags"]:
+            return
+        tree.selection_set(iid)
+        ticker = str(self._row_ticker(tree, iid)).strip()
+        if not ticker:
+            return
+        menu = tk.Menu(self, tearoff=0, bg=PANEL2, fg=FG,
+                       activebackground="#2d4a73", activeforeground=FG)
+        menu.add_command(label=f"Copy “{ticker}”", command=lambda: self._copy_text(ticker))
+        menu.add_command(label="Open in Yahoo Finance",
+                         command=lambda: webbrowser.open(f"https://finance.yahoo.com/quote/{ticker}"))
+        menu.add_separator()
+        menu.add_command(label="New alert for this ticker…",
+                         command=lambda t=ticker: self._open_builder("alert", prefill_ticker=t))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _copy_text(self, text):
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self._set_status(f"Copied “{text}” to clipboard")
+        except Exception:
+            pass
+
+    # ----------------------------------------------------- column widths
+    def _restore_col_widths(self):
+        saved = self.prefs.get("col_widths", {})
+        for name, tree in self._named_trees.items():
+            widths = saved.get(name, {})
+            for cid, w in widths.items():
+                try:
+                    tree.column(cid, width=int(w))
+                except Exception:
+                    pass
+
+    def _collect_col_widths(self) -> dict:
+        out = {}
+        for name, tree in self._named_trees.items():
+            try:
+                out[name] = {cid: tree.column(cid, "width") for cid in tree["columns"]}
+            except Exception:
+                pass
+        return out
+
+    # ------------------------------------------------------- alert sound
+    def _play_alert_sound(self):
+        if not getattr(self, "alert_sound_var", None) or not self.alert_sound_var.get():
+            return
+        def _beep():
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            except Exception:
+                try:
+                    self.bell()
+                except Exception:
+                    pass
+        threading.Thread(target=_beep, daemon=True).start()
+
     def _tick(self):
         """1 Hz: market session label + countdown to the next scheduled refresh."""
         try:
@@ -829,6 +1085,9 @@ class App(tk.Tk):
                 elif kind == "intraday":
                     if payload:
                         self._render_intraday(payload)
+                elif kind == "intraday_chart":
+                    ticker, bars = payload
+                    self._render_intraday_chart(ticker, bars)
                 elif kind == "news":
                     if payload:
                         self._render_news(payload)
@@ -853,6 +1112,8 @@ class App(tk.Tk):
                 self._empty_state(tree, len(COLUMNS), "Waiting for the first screen…")
                 continue
             for i, (_, row) in enumerate(df.head(config.top_n).iterrows()):
+                if not self._match_filter(row["ticker"]):
+                    continue
                 est = row["est_return"]
                 tag_sign = "pos" if est >= 0 else "neg"
                 band = f"{row['band_lo']*100:+.1f}%  …  {row['band_hi']*100:+.1f}%"
@@ -870,7 +1131,7 @@ class App(tk.Tk):
                 )
                 stripe = "even" if i % 2 else "odd"
                 tree.insert("", "end", values=vals, tags=(tag_sign, stripe))
-            self._apply_sort(tree)
+            self._finalize(tree, len(COLUMNS))
 
     def _empty_state(self, tree, ncols, text):
         """Show a single muted placeholder row when a table has no data."""
@@ -901,7 +1162,7 @@ class App(tk.Tk):
         win = tk.Toplevel(self)
         win.title(f"{ticker} — {HORIZONS[horizon_key]['label']}")
         win.configure(bg=PANEL)
-        win.geometry("440x460")
+        win.geometry("470x640")
         pad = {"padx": 18, "pady": 4}
 
         tk.Label(win, text=ticker, bg=PANEL, fg=ACCENT,
@@ -931,6 +1192,8 @@ class App(tk.Tk):
         line("Quality/value (0-1)", f"{r['quality_value']:.2f}" if r['quality_value'] == r['quality_value'] else "n/a")
         line("Vs. 52-week high", _pct(r['dist_52w_high']))
 
+        self._add_sparkline(win, ticker)
+
         tk.Frame(win, bg=PANEL2, height=1).pack(fill="x", padx=18, pady=8)
         btns = tk.Frame(win, bg=PANEL)
         btns.pack(fill="x", padx=18, pady=6)
@@ -938,6 +1201,40 @@ class App(tk.Tk):
                   command=lambda: webbrowser.open(f"https://finance.yahoo.com/quote/{ticker}")
                   ).pack(side="left")
         tk.Button(btns, text="Close", command=win.destroy).pack(side="right")
+
+    def _add_sparkline(self, win, ticker, days=120):
+        """Embed a small price chart from the cached daily prices (no network)."""
+        try:
+            from stockpredict.data import _load_cached_prices
+            prices = _load_cached_prices()
+            if prices is None or prices.empty or ticker not in prices.columns:
+                return
+            series = prices[ticker].dropna().tail(days)
+            if len(series) < 5:
+                return
+            # Embedding via FigureCanvasTkAgg — no need to set a global backend.
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+            up = series.iloc[-1] >= series.iloc[0]
+            fig = Figure(figsize=(4.2, 1.4), dpi=100, facecolor="#1a2230")
+            ax = fig.add_subplot(111)
+            ax.set_facecolor("#1a2230")
+            ax.plot(series.index, series.values, color=(GREEN if up else RED), lw=1.6)
+            ax.fill_between(series.index, series.values, series.min(),
+                            color=(GREEN if up else RED), alpha=0.12)
+            for s in ax.spines.values():
+                s.set_visible(False)
+            ax.tick_params(colors="#8b98a9", labelsize=7)
+            ax.margins(x=0)
+            fig.subplots_adjust(left=0.12, right=0.98, top=0.92, bottom=0.18)
+            tk.Label(win, text=f"Price — last {len(series)} sessions",
+                     bg=PANEL, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(8, 0))
+            canvas = FigureCanvasTkAgg(fig, master=win)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill="x", padx=16, pady=2)
+        except Exception:
+            pass  # sparkline is a nice-to-have; never break the dialog
 
     # -------------------------------------------------------------- helpers
     def _set_status(self, msg):
@@ -951,6 +1248,8 @@ class App(tk.Tk):
                 refresh_seconds=config.refresh_seconds,
                 auto_refresh=bool(self.auto_var.get()),
                 scan=self.scan_var.get(),
+                alert_sound=bool(self.alert_sound_var.get()),
+                col_widths=self._collect_col_widths(),
             )
         except Exception:
             pass
@@ -987,5 +1286,71 @@ def _pct(x):
         return "n/a"
 
 
+def _setup_logging():
+    """Log to a rotating file in the data dir; also install a global excepthook."""
+    import logging
+    from logging.handlers import RotatingFileHandler
+    from stockpredict.config import CACHE_DIR
+
+    log_dir = CACHE_DIR / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(log_dir / "stockpredict.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    logging.basicConfig(level=logging.INFO, handlers=[handler],
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    return logging.getLogger("stockpredict.app"), log_dir
+
+
+def _selftest() -> int:
+    """Headless import + pipeline smoke test — used to verify a frozen build."""
+    import stockpredict.storage as storage
+    import stockpredict.model as model      # noqa: F401
+    import backtest.engine as bt            # noqa: F401
+    import realtime.indicators as ind       # noqa: F401
+    import news.sentiment as sent
+    import scanners.engine as scan          # noqa: F401
+    import matplotlib                       # noqa: F401
+    import pandas, numpy                    # noqa: F401
+    storage.init_db()
+    assert sent.score_text("beats record profit")["score"] > 0
+    _safe_print(f"stockpredict selftest OK (v{__import__('stockpredict').__version__})")
+    return 0
+
+
+def _safe_print(msg):
+    """print() that tolerates a None stdout (PyInstaller windowed builds)."""
+    import sys
+    try:
+        if sys.stdout is not None:
+            print(msg)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    App().mainloop()
+    import sys
+
+    if "--version" in sys.argv:
+        _safe_print(__import__("stockpredict").__version__)
+        sys.exit(0)
+    if "--selftest" in sys.argv:
+        sys.exit(_selftest())
+
+    log, log_dir = _setup_logging()
+    log.info("stockpredict starting")
+
+    def _excepthook(exc_type, exc, tb):
+        log.error("Uncaught exception", exc_info=(exc_type, exc, tb))
+        try:
+            from tkinter import messagebox
+            messagebox.showerror(
+                "stockpredict error",
+                f"An unexpected error occurred:\n\n{exc}\n\nSee the log:\n{log_dir / 'stockpredict.log'}")
+        except Exception:
+            pass
+
+    sys.excepthook = _excepthook
+    try:
+        App().mainloop()
+    except Exception:
+        log.exception("Fatal error in mainloop")
+        raise

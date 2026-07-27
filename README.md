@@ -1,11 +1,20 @@
+![stockpredict](assets/banner.png)
+
 # stockpredict — day-trading research companion
+
+[![build](https://github.com/ibuilder/pyStocks/actions/workflows/build.yml/badge.svg)](https://github.com/ibuilder/pyStocks/actions/workflows/build.yml)
+![python](https://img.shields.io/badge/python-3.10%2B-blue)
+![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-green)
+![status](https://img.shields.io/badge/status-experimental-orange)
 
 A Python desktop application that turns continuously-aggregated market data into a
 single research surface for a discretionary trader: **multi-horizon return
 estimates** (week / month / year), **live intraday technicals**, **news +
 sentiment**, **market-wide scanners**, and a **rule-based alert engine** with
 desktop notifications — all fed by a Celery + Redis background pipeline and
-validated by a point-in-time backtesting harness.
+validated by a point-in-time backtesting harness. Ships as a **standalone Windows
+`.exe`** (no Python needed).
 
 > **Read this first.** This is a *research / decision-support companion*, **not** a
 > prediction engine, **not** an auto-trader, and **not** investment advice. No
@@ -27,16 +36,31 @@ pip install -r requirements.txt      # one-time
 python app.py
 ```
 
+> **Standalone .exe (no Python needed):** `pyinstaller stockpredict.spec` →
+> `dist\stockpredict.exe`. The GUI runs fully in-process, so the exe needs no
+> Redis/Celery. Full build/signing/installer notes in [PACKAGING.md](PACKAGING.md).
+
 A window opens, immediately starts pulling data, and populates seven tabs:
 **Next Week · Next Month · Next Year · ⚡ Intraday · 🔔 Alerts · 📰 News · 🔍 Scanners**.
 It auto-refreshes on a schedule (default 15 min) and has a **Refresh now** button.
 Double-click any return-estimate row for a factor-by-factor breakdown.
 
-**Desktop UX niceties:** click any column header to **sort** (numeric-aware, persists
-across live refreshes); a header **market-session indicator** (open / pre-market /
-after-hours / closed) with a **next-refresh countdown**; **friendly empty/loading
-states**; and **persisted preferences** — universe, refresh interval, auto-refresh,
-selected scan and window size are restored on next launch (`~/.stockpredict_cache/prefs.json`).
+**Desktop UX niceties:**
+- Click any column header to **sort** (numeric-aware, persists across live refreshes).
+- **Quick filter box** — type a ticker fragment to filter every tab instantly.
+- **Export CSV** — one click exports the active tab's table.
+- **Price sparkline** — double-click a return-estimate row for a factor breakdown
+  *and* a 120-session price chart (drawn from the local cache, no network).
+- **Embedded intraday chart** — select a row on the Intraday tab to see its
+  intraday price line with a **VWAP overlay** in a panel below the table.
+- **Right-click any row** → Copy ticker · Open in Yahoo Finance · New alert.
+- **Sound on alert** — optional beep when a new alert fires (toggle on the Alerts tab).
+- Header **market-session indicator** (open / pre-market / after-hours / closed)
+  with a **next-refresh countdown**.
+- **Friendly empty/loading states** everywhere.
+- **Persisted preferences** — universe, refresh interval, auto-refresh, selected
+  scan, filter, **column widths**, sound toggle and window size restored on next
+  launch (`~/.stockpredict_cache/prefs.json`).
 
 ### Project structure
 ```

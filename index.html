@@ -78,7 +78,8 @@
     <span class="badge"><b>7</b> live tabs</span>
     <span class="badge"><b>Celery + Redis</b> background pipeline</span>
     <span class="badge"><b>Point-in-time</b> backtester</span>
-    <span class="badge"><b>28</b> passing tests</span>
+    <span class="badge"><b>31</b> passing tests</span>
+    <span class="badge">Standalone <b>.exe</b></span>
     <span class="badge">Python · Tkinter</span>
   </div>
   <div class="disc">⚠ A research &amp; decision-support tool — <b>not</b> a prediction engine,
@@ -180,6 +181,27 @@
   </div>
 </section>
 
+<section id="kronos">
+  <h2>Evaluated &amp; rejected: Kronos</h2>
+  <p class="sub">We vetted the <a href="https://github.com/shiyu-coder/Kronos">Kronos</a> candlestick
+     foundation model as a forecasting upgrade. Three independent backtests, zero-shot. The
+     backtest gate said no — before we added 2&nbsp;GB of dependencies for it.</p>
+  <div class="two">
+    <table class="rt">
+      <tr><th>Test</th><th>Kronos IC</th><th>Dir-hit</th><th>Baseline IC</th></tr>
+      <tr><td>Daily, recent</td><td class="neg">−0.28</td><td>37.5%</td><td class="pos">+0.36</td></tr>
+      <tr><td>Daily, 7-yr</td><td class="neg">−0.05</td><td>45.4%</td><td class="pos">+0.12</td></tr>
+      <tr><td>Intraday 5m (native)</td><td class="neg">−0.14</td><td>48.8%</td><td class="pos">+0.06</td></tr>
+    </table>
+    <div class="card">
+      <h3>Discipline over hype</h3>
+      <p>Even on its native intraday domain, zero-shot Kronos showed no usable edge and lost
+         to both the factor model and a one-line momentum rule. Kept the reusable evaluation
+         harness; dropped the weights. Full write-up in <code>KRONOS_EVAL.md</code>.</p>
+    </div>
+  </div>
+</section>
+
 <section id="roadmap">
   <h2>Roadmap</h2>
   <p class="sub">Built in increments, each demoable and tested.</p>
@@ -199,6 +221,9 @@
   <pre># desktop app (yfinance prototype data)
 pip install -r requirements.txt
 python app.py
+
+# or build a standalone Windows .exe — no Python needed
+pyinstaller stockpredict.spec        # -> dist\stockpredict.exe
 
 # background pipeline
 docker compose up -d redis
