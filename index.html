@@ -27,6 +27,14 @@
   .badge{background:var(--panel);border:1px solid var(--line);border-radius:999px;
          padding:6px 14px;font-size:13px;color:var(--muted)}
   .badge b{color:var(--fg)}
+  .cta-row{margin:26px 0 0;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .cta{display:inline-flex;align-items:center;gap:9px;padding:13px 24px;border-radius:10px;
+       font-size:16px;font-weight:700;border:1px solid transparent}
+  .cta.primary{background:linear-gradient(90deg,#3fb950,#2ea043);color:#08130b}
+  .cta.primary:hover{filter:brightness(1.08);text-decoration:none}
+  .cta.ghost{background:var(--panel);border-color:var(--line);color:var(--fg)}
+  .cta.ghost:hover{border-color:var(--accent);text-decoration:none}
+  .cta small{font-weight:500;opacity:.8}
   .disc{margin:26px auto 0;max-width:760px;background:#241a00;border:1px solid var(--amber);
         color:#e3b341;border-radius:10px;padding:13px 18px;font-size:14px}
   section{padding:42px 0;border-top:1px solid var(--line)}
@@ -82,6 +90,14 @@
     <span class="badge">Standalone <b>.exe</b></span>
     <span class="badge">Python · Tkinter</span>
   </div>
+  <div class="cta-row">
+    <a class="cta primary" href="https://github.com/ibuilder/pyStocks/releases/latest/download/stockpredict.exe">
+      ⬇ Download for Windows <small>(.exe, ~112 MB)</small></a>
+    <a class="cta ghost" href="https://github.com/ibuilder/pyStocks/releases/latest">All releases</a>
+    <a class="cta ghost" href="https://github.com/ibuilder/pyStocks">View source</a>
+  </div>
+  <p class="tag" style="font-size:14px;margin-top:10px">No Python needed · Windows 10/11 ·
+     unsigned build — SmartScreen may warn (More info → Run anyway)</p>
   <div class="disc">⚠ A research &amp; decision-support tool — <b>not</b> a prediction engine,
      <b>not</b> an auto-trader, and <b>not</b> investment advice. It never places trades; it
      surfaces information. Every number is an estimate with wide error bars.</div>

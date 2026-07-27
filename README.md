@@ -23,6 +23,15 @@ validated by a point-in-time backtesting harness. Ships as a **standalone Window
 > *speed, situational awareness, and discipline* — every number is an estimate with
 > wide error bars. The app never places trades; it surfaces information for you.
 
+## ⬇ Download
+
+**[Download `stockpredict.exe` for Windows](https://github.com/ibuilder/pyStocks/releases/latest/download/stockpredict.exe)**
+(~112 MB, no Python needed · Windows 10/11) — or see [all releases](https://github.com/ibuilder/pyStocks/releases/latest).
+
+> The build is **unsigned**, so Windows SmartScreen may warn on first launch —
+> click *More info → Run anyway*. Data lives in `%LOCALAPPDATA%\stockpredict`.
+> No auto-update yet: grab the newest release to upgrade.
+
 📄 **Project landing page:** [`index.html`](index.html) (GitHub Pages-ready).
 🗺️ **Roadmap & phase status:** [`ROADMAP.md`](ROADMAP.md).
 
