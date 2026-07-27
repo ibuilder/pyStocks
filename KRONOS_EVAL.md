@@ -25,11 +25,17 @@ zero-shot, CPU.
 |---|---|---|---|
 | Daily, recent 6 mo (6 dates, small) | −0.28 | 37.5% | Factor **+0.36** |
 | Daily, full 7 yr (20 dates, mini) | −0.05 | 45.4% | Factor **+0.12** |
-| **Intraday 5m → next 30 min (24 sessions, mini)** — *native domain* | **−0.09** | **42.5%** | Momentum **+0.06** |
+| **Intraday 5m → next 30 min (24 sessions, mini)** — *native domain* | **−0.14** (t=−1.71) | **48.8%** | Momentum **+0.06** |
 
-All three agree: zero-shot Kronos sits at **~0-to-negative IC** with **below-coin-flip
-direction (42–45%)**, losing to both the factor model and a one-line momentum rule —
+All three agree: zero-shot Kronos sits at **~0-to-negative IC** with **≈coin-flip
+direction (45–49%)**, losing to both the factor model and a one-line momentum rule —
 *including on its native intraday short-horizon domain*.
+
+> **Correction (post code-review):** an earlier version of the intraday eval passed
+> a business-*day* forecast frequency to a 5-*minute* series, feeding Kronos wrong
+> time-of-day features. Fixed (`freq="5min"`); the table above reflects the corrected
+> run. The conclusion (no usable edge) is unchanged; the corrected directional
+> hit-rate is actually closer to a coin flip (48.8% vs the mis-specified 42.5%).
 
 ## Practical blockers (even if skill existed)
 - **~37 s per forecast** for Kronos-small on CPU — impractical for a real universe

@@ -107,7 +107,8 @@ def run(n_tickers=10, horizon=6, max_days=24, ckpt="kronos_intraday_ckpt.csv", o
             except Exception:
                 pass
             try:
-                kpred[t] = kf.expected_return(hist, horizon, sample_count=1)
+                # freq MUST be 5min here — these are 5-minute bars, not daily.
+                kpred[t] = kf.expected_return(hist, horizon, sample_count=1, freq="5min")
             except Exception as exc:
                 _emit(f"    ! {t} {exc}")
         kpred = pd.Series(kpred).dropna(); mom = pd.Series(mom).dropna()

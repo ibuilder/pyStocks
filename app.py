@@ -713,7 +713,7 @@ class App(tk.Tk):
         self._finalize(tree, len(SCAN_COLUMNS))
 
     # ------------------------------------------------- rule / scan builder
-    def _open_builder(self, kind: str):
+    def _open_builder(self, kind: str, prefill_ticker: str | None = None):
         """Modal dialog to build an alert rule (kind='alert') or scan ('scan')."""
         is_alert = kind == "alert"
         win = tk.Toplevel(self)
@@ -736,7 +736,7 @@ class App(tk.Tk):
         name_var = tk.StringVar()
         tk.Entry(top, textvariable=name_var, width=44).grid(row=0, column=1, columnspan=3, sticky="w", padx=6, pady=3)
 
-        scope_var = tk.StringVar(value="*")
+        scope_var = tk.StringVar(value=(prefill_ticker if (kind == "alert" and prefill_ticker) else "*"))
         cooldown_var = tk.StringVar(value="1800")
         sort_var = tk.StringVar(value="pct_from_open")
         desc_var = tk.BooleanVar(value=True)
@@ -1012,7 +1012,7 @@ class App(tk.Tk):
                          command=lambda: webbrowser.open(f"https://finance.yahoo.com/quote/{ticker}"))
         menu.add_separator()
         menu.add_command(label="New alert for this ticker…",
-                         command=lambda: self._open_builder("alert"))
+                         command=lambda t=ticker: self._open_builder("alert", prefill_ticker=t))
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -1212,8 +1212,7 @@ class App(tk.Tk):
             series = prices[ticker].dropna().tail(days)
             if len(series) < 5:
                 return
-            import matplotlib
-            matplotlib.use("Agg")
+            # Embedding via FigureCanvasTkAgg — no need to set a global backend.
             from matplotlib.figure import Figure
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -1313,15 +1312,25 @@ def _selftest() -> int:
     import pandas, numpy                    # noqa: F401
     storage.init_db()
     assert sent.score_text("beats record profit")["score"] > 0
-    print(f"stockpredict selftest OK (v{__import__('stockpredict').__version__})")
+    _safe_print(f"stockpredict selftest OK (v{__import__('stockpredict').__version__})")
     return 0
+
+
+def _safe_print(msg):
+    """print() that tolerates a None stdout (PyInstaller windowed builds)."""
+    import sys
+    try:
+        if sys.stdout is not None:
+            print(msg)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
     import sys
 
     if "--version" in sys.argv:
-        print(__import__("stockpredict").__version__)
+        _safe_print(__import__("stockpredict").__version__)
         sys.exit(0)
     if "--selftest" in sys.argv:
         sys.exit(_selftest())

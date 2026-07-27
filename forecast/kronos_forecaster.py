@@ -65,13 +65,19 @@ class KronosForecaster:
                                        pred_len=horizon, T=T, top_p=top_p,
                                        sample_count=sample_count, verbose=False)
 
-    def expected_return(self, ohlcv: pd.DataFrame, horizon: int, sample_count: int = 1) -> float:
-        """Predicted cumulative return over the horizon (final close vs last close)."""
+    def expected_return(self, ohlcv: pd.DataFrame, horizon: int, sample_count: int = 1,
+                        freq: str = "B") -> float:
+        """Predicted cumulative return over the horizon (final close vs last close).
+
+        `freq` MUST match the bar spacing ("B" for daily, "5min" for 5-minute bars),
+        because Kronos derives time-of-day/calendar features from the forecast
+        timestamps — a wrong freq feeds the model the wrong horizon.
+        """
         clean_close = ohlcv["close"].dropna()
         if clean_close.empty:
             return float("nan")
         last_close = float(clean_close.iloc[-1])
-        pred = self.forecast(ohlcv, horizon, sample_count=sample_count)
+        pred = self.forecast(ohlcv, horizon, sample_count=sample_count, freq=freq)
         if pred is None or pred.empty:
             return float("nan")
         return float(pred["close"].iloc[-1]) / last_close - 1.0
