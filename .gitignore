@@ -19,6 +19,12 @@ assets_icon_preview.png
 .stockpredict_cache/
 .cache/
 
+# Kronos experiment: keep forecast/ (harness + wrapper + vendored model code),
+# drop the full upstream clone and raw eval outputs (evidence lives in KRONOS_EVAL.md).
+vendor_kronos/
+kronos_*.txt
+kronos_*.csv
+
 # OS
 Thumbs.db
 .DS_Store

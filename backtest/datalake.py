@@ -57,3 +57,43 @@ def load_history(tickers: list[str], period: str = DEFAULT_PERIOD, force: bool =
         except Exception:
             pass
     return close
+
+
+def load_ohlcv(tickers: list[str], period: str = DEFAULT_PERIOD, force: bool = False) -> dict[str, pd.DataFrame]:
+    """Return {ticker: OHLCV DataFrame} (open/high/low/close/volume), Parquet-cached.
+
+    Needed by the Kronos forecaster, which consumes full candles, not just close.
+    """
+    key = _key(tickers, period).replace("prices_", "ohlcv_").replace(".parquet", "")
+    out: dict[str, pd.DataFrame] = {}
+    combined = LAKE_DIR / f"{key}.parquet"
+    if not force and combined.exists() and (time.time() - combined.stat().st_mtime) < TTL_SECONDS:
+        try:
+            flat = pd.read_parquet(combined)
+            for t in flat.columns.get_level_values(0).unique():
+                out[t] = flat[t].dropna(how="all")
+            if out:
+                return out
+        except Exception:
+            pass
+
+    import yfinance as yf
+    raw = yf.download(tickers=tickers, period=period, interval="1d", auto_adjust=True,
+                      group_by="ticker", threads=True, progress=False)
+    if raw is None or raw.empty:
+        return out
+    fields = ["Open", "High", "Low", "Close", "Volume"]
+    for t in tickers:
+        try:
+            sub = raw[t][fields].dropna(how="all") if isinstance(raw.columns, pd.MultiIndex) else raw[fields]
+        except Exception:
+            continue
+        sub = sub.rename(columns=str.lower).sort_index()
+        if not sub.empty:
+            out[t] = sub
+    if out:
+        try:
+            pd.concat(out, axis=1).to_parquet(combined)
+        except Exception:
+            pass
+    return out

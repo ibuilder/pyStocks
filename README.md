@@ -1,11 +1,20 @@
+![stockpredict](assets/banner.png)
+
 # stockpredict — day-trading research companion
+
+[![build](https://github.com/ibuilder/pyStocks/actions/workflows/build.yml/badge.svg)](https://github.com/ibuilder/pyStocks/actions/workflows/build.yml)
+![python](https://img.shields.io/badge/python-3.10%2B-blue)
+![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-green)
+![status](https://img.shields.io/badge/status-experimental-orange)
 
 A Python desktop application that turns continuously-aggregated market data into a
 single research surface for a discretionary trader: **multi-horizon return
 estimates** (week / month / year), **live intraday technicals**, **news +
 sentiment**, **market-wide scanners**, and a **rule-based alert engine** with
 desktop notifications — all fed by a Celery + Redis background pipeline and
-validated by a point-in-time backtesting harness.
+validated by a point-in-time backtesting harness. Ships as a **standalone Windows
+`.exe`** (no Python needed).
 
 > **Read this first.** This is a *research / decision-support companion*, **not** a
 > prediction engine, **not** an auto-trader, and **not** investment advice. No
